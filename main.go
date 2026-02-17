@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"os"
 
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/config"
 )
@@ -10,18 +10,33 @@ import (
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
-		log.Fatalf("error reading config: %v", err)
+		fmt.Printf("error reading config: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Set the current user and update the file
-	err = cfg.SetUser("philip")
-	if err != nil {
-		log.Fatalf("error setting user: %v", err)
+	appState := &state{cfg: &cfg}
+
+	cmds := &commands{
+		handlers: make(map[string]func(*state, command) error),
+	}
+	cmds.register("login", handlerLogin)
+
+	if len(os.Args) < 2 {
+		fmt.Println("error: not enough arguments")
+		os.Exit(1)
 	}
 
-	newCfg, err := config.Read()
-	if err != nil {
-		log.Fatalf("error reading updated config: %v", err)
+	cmdName := os.Args[1]
+	cmdArgs := os.Args[2:]
+
+	cmd := command{
+		name: cmdName,
+		args: cmdArgs,
 	}
-	fmt.Printf("Config: %+v\n", newCfg)
+
+	err = cmds.run(appState, cmd)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		os.Exit(1)
+	}
 }

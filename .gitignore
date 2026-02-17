@@ -1,3 +1,4 @@
 .idea/
 feed-ingestion-service
 .env
+vendor/
