@@ -84,3 +84,38 @@ func handlerRegister(s *state, cmd command) error {
 	fmt.Printf("User %q was created\n", user.Name)
 	return nil
 }
+
+func handlerUsers(s *state, cmd command) error {
+	if len(cmd.args) > 0 {
+		return errors.New("users command does not take any arguments")
+	}
+
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't get users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Name == s.cfg.CurrentUserName {
+			fmt.Printf("* %s (current)\n", user.Name)
+			continue
+		}
+		fmt.Printf("* %s\n", user.Name)
+	}
+
+	return nil
+}
+
+func handlerReset(s *state, cmd command) error {
+	if len(cmd.args) > 0 {
+		return errors.New("reset command does not take any arguments")
+	}
+
+	err := s.db.ResetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("couldn't reset database: %w", err)
+	}
+
+	fmt.Println("database reset successfully")
+	return nil
+}
