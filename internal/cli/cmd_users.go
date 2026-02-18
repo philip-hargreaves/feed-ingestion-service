@@ -16,7 +16,7 @@ func handlerLogin(s *state, cmd command) error {
 
 	username := cmd.args[0]
 
-	_, err := s.db.GetUser(context.Background(), username)
+	_, err := s.users.GetUser(context.Background(), username)
 	if err != nil {
 		return fmt.Errorf("User %q not found", username)
 	}
@@ -38,7 +38,7 @@ func handlerRegister(s *state, cmd command) error {
 	username := cmd.args[0]
 	now := time.Now()
 
-	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
+	user, err := s.users.CreateUser(context.Background(), database.CreateUserParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -62,7 +62,7 @@ func handlerUsers(s *state, cmd command) error {
 		return newUsageError("Users command does not take any arguments", "feeder users")
 	}
 
-	users, err := s.db.GetUsers(context.Background())
+	users, err := s.users.GetUsers(context.Background())
 	if err != nil {
 		return fmt.Errorf("Couldn't get users: %w", err)
 	}
@@ -83,7 +83,7 @@ func handlerReset(s *state, cmd command) error {
 		return newUsageError("Reset command does not take any arguments", "feeder reset")
 	}
 
-	err := s.db.ResetUsers(context.Background())
+	err := s.users.ResetUsers(context.Background())
 	if err != nil {
 		return fmt.Errorf("Couldn't reset database: %w", err)
 	}

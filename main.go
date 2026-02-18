@@ -29,7 +29,10 @@ func main() {
 	dbQueries := database.New(db)
 	registry := cli.NewRegistry(cli.Dependencies{
 		Config: &cfg,
-		Store:  dbQueries,
+		Users:  dbQueries,
+		Feeds:  dbQueries,
+		Follows: dbQueries,
+		Posts:  dbQueries,
 		FetchFeed: func(ctx context.Context, feedURL string) (cli.FeedResult, error) {
 			feed, err := fetchFeed(ctx, feedURL)
 			if err != nil {

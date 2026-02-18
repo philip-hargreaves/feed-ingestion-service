@@ -15,7 +15,7 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 	}
 
 	now := time.Now()
-	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+	feed, err := s.feeds.CreateFeed(context.Background(), database.CreateFeedParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -27,7 +27,7 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 		return fmt.Errorf("Couldn't create feed: %w", err)
 	}
 
-	_, err = s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+	_, err = s.follows.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -47,13 +47,13 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 		return newUsageError("Follow requires one argument: url", "feeder follow <url>")
 	}
 
-	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
+	feed, err := s.feeds.GetFeedByURL(context.Background(), cmd.args[0])
 	if err != nil {
 		return fmt.Errorf("Couldn't find feed by URL: %w", err)
 	}
 
 	now := time.Now()
-	feedFollow, err := s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+	feedFollow, err := s.follows.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -74,12 +74,12 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 		return newUsageError("Unfollow requires one argument: url", "feeder unfollow <url>")
 	}
 
-	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
+	feed, err := s.feeds.GetFeedByURL(context.Background(), cmd.args[0])
 	if err != nil {
 		return fmt.Errorf("Couldn't find feed by URL: %w", err)
 	}
 
-	err = s.db.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+	err = s.follows.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
 		UserID: user.ID,
 		FeedID: feed.ID,
 	})
@@ -96,7 +96,7 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 		return newUsageError("Following command does not take any arguments", "feeder following")
 	}
 
-	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+	feedFollows, err := s.follows.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		return fmt.Errorf("Couldn't get feed follows: %w", err)
 	}
@@ -113,7 +113,7 @@ func handlerFeeds(s *state, cmd command) error {
 		return newUsageError("Feeds command does not take any arguments", "feeder feeds")
 	}
 
-	feeds, err := s.db.GetFeeds(context.Background())
+	feeds, err := s.feeds.GetFeeds(context.Background())
 	if err != nil {
 		return fmt.Errorf("Couldn't get feeds: %w", err)
 	}

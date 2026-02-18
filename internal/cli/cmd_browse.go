@@ -48,7 +48,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 		}
 	}
 
-	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+	posts, err := s.posts.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
 		UserID:  user.ID,
 		Column2: containsFilter,
 		Column3: feedFilter,

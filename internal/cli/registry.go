@@ -16,7 +16,10 @@ func NewRegistry(deps Dependencies) *Registry {
 	reg := &Registry{
 		state: &state{
 			cfg:            deps.Config,
-			db:             deps.Store,
+			users:          deps.Users,
+			feeds:          deps.Feeds,
+			follows:        deps.Follows,
+			posts:          deps.Posts,
 			fetchFeed:      deps.FetchFeed,
 			executablePath: deps.ExecutablePath,
 		},
@@ -52,7 +55,7 @@ func (r *Registry) Run(ctx context.Context, cmd Command) error {
 
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(s *state, cmd command) error {
-		user, err := s.db.GetUser(context.Background(), s.cfg.GetCurrentUserName())
+		user, err := s.users.GetUser(context.Background(), s.cfg.GetCurrentUserName())
 		if err != nil {
 			return fmt.Errorf("Couldn't get current user: %w", err)
 		}

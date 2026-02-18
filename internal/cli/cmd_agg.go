@@ -75,14 +75,14 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 		return result
 	}
 
-	err = s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
+	err = s.feeds.MarkFeedFetched(context.Background(), nextFeed.ID)
 	if err != nil {
 		result.err = fmt.Errorf("Couldn't mark feed fetched for %q: %w", nextFeed.Name, err)
 		return result
 	}
 
 	for _, item := range feed.Items {
-		_, err := s.db.CreatePost(context.Background(), database.CreatePostParams{
+		_, err := s.posts.CreatePost(context.Background(), database.CreatePostParams{
 			ID:        uuid.New(),
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -112,7 +112,7 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 }
 
 func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimiter) error {
-	nextFeeds, err := s.db.GetNextFeedsToFetch(context.Background(), int32(batchSize))
+	nextFeeds, err := s.feeds.GetNextFeedsToFetch(context.Background(), int32(batchSize))
 	if err != nil {
 		return fmt.Errorf("Couldn't get next feeds to fetch: %w", err)
 	}
