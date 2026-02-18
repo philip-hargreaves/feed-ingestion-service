@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -47,7 +48,24 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	}
 
 	feed := RSSFeed{}
-	err = xml.Unmarshal(responseBody, &feed)
+	decoder := xml.NewDecoder(bytes.NewReader(responseBody))
+	decoder.Strict = false
+	decoder.Entity = map[string]string{
+		"lt":     "<",
+		"gt":     ">",
+		"amp":    "&",
+		"apos":   "'",
+		"quot":   "\"",
+		"nbsp":   "\u00A0",
+		"ldquo":  "\u201C",
+		"rdquo":  "\u201D",
+		"lsquo":  "\u2018",
+		"rsquo":  "\u2019",
+		"rsaquo": "\u203A",
+		"ndash":  "\u2013",
+		"mdash":  "\u2014",
+	}
+	err = decoder.Decode(&feed)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't parse feed XML: %w", err)
 	}

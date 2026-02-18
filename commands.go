@@ -227,6 +227,7 @@ type scrapeResult struct {
 	feedName   string
 	newPosts   int
 	duplicates int
+	parseErrors int
 	err        error
 }
 
@@ -245,6 +246,9 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 	limiter.wait(nextFeed.Url)
 	feed, err := fetchFeed(context.Background(), nextFeed.Url)
 	if err != nil {
+		if strings.Contains(err.Error(), "Couldn't parse feed XML") {
+			result.parseErrors = 1
+		}
 		result.err = fmt.Errorf("Couldn't fetch feed %q: %w", nextFeed.Name, err)
 		return result
 	}
@@ -321,9 +325,11 @@ func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimite
 	totalNewPosts := 0
 	totalDuplicates := 0
 	totalErrors := 0
+	totalParseErrors := 0
 	for result := range results {
 		totalNewPosts += result.newPosts
 		totalDuplicates += result.duplicates
+		totalParseErrors += result.parseErrors
 		if result.err != nil {
 			totalErrors++
 			fmt.Printf("Error scraping feed %q: %v\n", result.feedName, result.err)
@@ -331,12 +337,13 @@ func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimite
 	}
 
 	fmt.Printf(
-		"Scrape cycle complete (feeds=%d, workers=%d, new_posts=%d, duplicates=%d, errors=%d)\n",
+		"Scrape cycle complete (feeds=%d, workers=%d, new_posts=%d, duplicates=%d, errors=%d, parse_errors=%d)\n",
 		len(nextFeeds),
 		workers,
 		totalNewPosts,
 		totalDuplicates,
 		totalErrors,
+		totalParseErrors,
 	)
 	return nil
 }
