@@ -44,7 +44,7 @@ Commands:
   following
     List feed names the current user follows.
 
-  agg <time_between_reqs> [workers] [batch_size] [domain_delay]
+  agg (aggregate) <time_between_reqs> [workers] [batch_size] [domain_delay]
     Continuously fetch feeds on an interval.
     Optional args default to workers=4, batch_size=workers*2, domain_delay=2s.
 
