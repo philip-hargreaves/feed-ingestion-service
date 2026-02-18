@@ -14,29 +14,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	appState := &state{cfg: &cfg}
-
-	cmds := &commands{
-		handlers: make(map[string]func(*state, command) error),
-	}
-	cmds.register("login", handlerLogin)
-
-	if len(os.Args) < 2 {
-		fmt.Println("error: not enough arguments")
-		os.Exit(1)
-	}
-
-	cmdName := os.Args[1]
-	cmdArgs := os.Args[2:]
-
-	cmd := command{
-		name: cmdName,
-		args: cmdArgs,
-	}
-
-	err = cmds.run(appState, cmd)
+	err = cfg.SetUser("philip")
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
+		fmt.Printf("error setting user: %v\n", err)
 		os.Exit(1)
 	}
+
+	cfg, err = config.Read()
+	if err != nil {
+		fmt.Printf("error reading config again: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Config: %+v\n", cfg)
 }
