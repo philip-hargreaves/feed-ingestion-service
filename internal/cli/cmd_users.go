@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -68,7 +68,7 @@ func handlerUsers(s *state, cmd command) error {
 	}
 
 	for _, user := range users {
-		if user.Name == s.cfg.CurrentUserName {
+		if user.Name == s.cfg.GetCurrentUserName() {
 			fmt.Printf("* %s (Current)\n", user.Name)
 			continue
 		}

@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -9,12 +9,17 @@ import (
 	"time"
 )
 
-func handlerSupervise(_ *state, cmd command) error {
+func handlerSupervise(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
 		return newUsageError("Supervise requires agg arguments", "feeder supervise <time_between_reqs> [workers] [batch_size] [domain_delay]")
 	}
 
-	executablePath, err := os.Executable()
+	executablePathFn := s.executablePath
+	if executablePathFn == nil {
+		executablePathFn = os.Executable
+	}
+
+	executablePath, err := executablePathFn()
 	if err != nil {
 		return fmt.Errorf("Couldn't determine executable path: %w", err)
 	}

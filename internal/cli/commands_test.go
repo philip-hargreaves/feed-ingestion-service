@@ -1,7 +1,8 @@
-package main
+package cli
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"io"
@@ -194,7 +195,9 @@ func TestParsePublishedAt(t *testing.T) {
 }
 
 func TestHandlerAggArgumentValidation(t *testing.T) {
-	err := handlerAgg(&state{}, command{name: "agg"})
+	s := &state{fetchFeed: func(_ context.Context, _ string) (FeedResult, error) { return FeedResult{}, nil }}
+
+	err := handlerAgg(s, command{name: "agg"})
 	if err == nil {
 		t.Fatal("expected error when agg is missing duration")
 	}
@@ -202,7 +205,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = handlerAgg(&state{}, command{name: "agg", args: []string{"not-duration"}})
+	err = handlerAgg(s, command{name: "agg", args: []string{"not-duration"}})
 	if err == nil {
 		t.Fatal("expected error for invalid duration")
 	}
@@ -210,7 +213,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "0"}})
+	err = handlerAgg(s, command{name: "agg", args: []string{"1s", "0"}})
 	if err == nil {
 		t.Fatal("expected error for invalid workers")
 	}
@@ -218,7 +221,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "0"}})
+	err = handlerAgg(s, command{name: "agg", args: []string{"1s", "2", "0"}})
 	if err == nil {
 		t.Fatal("expected error for invalid batch size")
 	}
@@ -226,7 +229,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "4", "bad"}})
+	err = handlerAgg(s, command{name: "agg", args: []string{"1s", "2", "4", "bad"}})
 	if err == nil {
 		t.Fatal("expected error for invalid domain delay")
 	}
@@ -234,7 +237,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "4", "1s", "extra"}})
+	err = handlerAgg(s, command{name: "agg", args: []string{"1s", "2", "4", "1s", "extra"}})
 	if err == nil {
 		t.Fatal("expected error for too many args")
 	}

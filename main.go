@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 
 	_ "github.com/lib/pq"
+	"github.com/philip-hargreaves/feed-ingestion-service/internal/cli"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/config"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/database"
 )
@@ -13,57 +15,55 @@ import (
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
-		fmt.Printf("Error reading config: %v\n", err)
+		fmt.Printf("error reading config: %v\n", err)
 		os.Exit(1)
 	}
 
 	db, err := sql.Open("postgres", cfg.DbURL)
 	if err != nil {
-		fmt.Printf("Error connecting to database: %v\n", err)
+		fmt.Printf("error connecting to database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
 	dbQueries := database.New(db)
-
-	appState := &state{
-		cfg: &cfg,
-		db:  dbQueries,
-	}
-
-	cmds := &commands{
-		handlers: make(map[string]func(*state, command) error),
-	}
-	cmds.register("help", handlerHelp)
-	cmds.register("login", handlerLogin)
-	cmds.register("register", handlerRegister)
-	cmds.register("users", handlerUsers)
-	cmds.register("agg", handlerAgg)
-	cmds.register("supervise", handlerSupervise)
-	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
-	cmds.register("follow", middlewareLoggedIn(handlerFollow))
-	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
-	cmds.register("following", middlewareLoggedIn(handlerFollowing))
-	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
-	cmds.register("feeds", handlerFeeds)
-	cmds.register("reset", handlerReset)
+	registry := cli.NewRegistry(cli.Dependencies{
+		Config: &cfg,
+		Store:  dbQueries,
+		FetchFeed: func(ctx context.Context, feedURL string) (cli.FeedResult, error) {
+			feed, err := fetchFeed(ctx, feedURL)
+			if err != nil {
+				return cli.FeedResult{}, err
+			}
+			items := make([]cli.FeedItem, 0, len(feed.Channel.Item))
+			for _, item := range feed.Channel.Item {
+				items = append(items, cli.FeedItem{
+					Title:       item.Title,
+					Link:        item.Link,
+					Description: item.Description,
+					PubDate:     item.PubDate,
+				})
+			}
+			return cli.FeedResult{Items: items}, nil
+		},
+	})
 
 	if len(os.Args) < 2 {
-		fmt.Println("Error: not enough arguments")
+		fmt.Println("error: not enough arguments")
 		os.Exit(1)
 	}
 
 	cmdName := os.Args[1]
 	cmdArgs := os.Args[2:]
 
-	cmd := command{
-		name: cmdName,
-		args: cmdArgs,
+	cmd := cli.Command{
+		Name: cmdName,
+		Args: cmdArgs,
 	}
 
-	err = cmds.run(appState, cmd)
+	err = registry.Run(context.Background(), cmd)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf("error: %v\n", err)
 		os.Exit(1)
 	}
 }

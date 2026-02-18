@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -66,7 +66,7 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 
 	fmt.Printf("Fetching feed: %s\n", nextFeed.Name)
 	limiter.wait(nextFeed.Url)
-	feed, err := fetchFeed(context.Background(), nextFeed.Url)
+	feed, err := s.fetchFeed(context.Background(), nextFeed.Url)
 	if err != nil {
 		if strings.Contains(err.Error(), "Couldn't parse feed XML") {
 			result.parseErrors = 1
@@ -81,7 +81,7 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 		return result
 	}
 
-	for _, item := range feed.Channel.Item {
+	for _, item := range feed.Items {
 		_, err := s.db.CreatePost(context.Background(), database.CreatePostParams{
 			ID:        uuid.New(),
 			CreatedAt: time.Now(),

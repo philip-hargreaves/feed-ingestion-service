@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const configFileName = ".feederconfig.json"
+const configFileName = ".gatorconfig.json"
 
 type Config struct {
 	DbURL           string `json:"db_url"`
@@ -38,6 +38,10 @@ func Read() (Config, error) {
 func (cfg *Config) SetUser(userName string) error {
 	cfg.CurrentUserName = userName
 	return write(*cfg)
+}
+
+func (cfg *Config) GetCurrentUserName() string {
+	return cfg.CurrentUserName
 }
 
 func getConfigFilePath() (string, error) {
