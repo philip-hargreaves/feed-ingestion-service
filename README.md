@@ -1,4 +1,4 @@
-# Feed Ingestion Service (Feeder)
+# Feeder
 
 Feeder is a Go CLI for building a personal or team "news inbox" from RSS feeds.  
 It pulls feeds continuously, stores normalised data in PostgreSQL, and lets you query posts from the terminal.
@@ -216,4 +216,5 @@ DB connection issues:
 
 No posts showing:
 - Confirm the user follows feeds (`feeder following`) and ingestion is running (`agg` or `supervise`).
+
 
