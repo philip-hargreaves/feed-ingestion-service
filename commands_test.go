@@ -198,7 +198,7 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when agg is missing duration")
 	}
-	if !strings.Contains(err.Error(), "Agg requires one argument") {
+	if !strings.Contains(err.Error(), "Agg requires 1 to 4 arguments") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -208,6 +208,35 @@ func TestHandlerAggArgumentValidation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Invalid duration") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "0"}})
+	if err == nil {
+		t.Fatal("expected error for invalid workers")
+	}
+	if !strings.Contains(err.Error(), "Invalid workers value") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "0"}})
+	if err == nil {
+		t.Fatal("expected error for invalid batch size")
+	}
+	if !strings.Contains(err.Error(), "Invalid batch size value") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "4", "bad"}})
+	if err == nil {
+		t.Fatal("expected error for invalid domain delay")
+	}
+	if !strings.Contains(err.Error(), "Invalid domain delay") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = handlerAgg(&state{}, command{name: "agg", args: []string{"1s", "2", "4", "1s", "extra"}})
+	if err == nil {
+		t.Fatal("expected error for too many args")
 	}
 }
 

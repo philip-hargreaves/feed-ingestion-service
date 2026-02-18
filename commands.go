@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,8 +73,9 @@ Commands:
   following
     List feed names the current user follows.
 
-  agg <time_between_reqs>
-    Continuously fetch feeds on an interval (examples: 5s, 1m, 1h).
+  agg <time_between_reqs> [workers] [batch_size] [domain_delay]
+    Continuously fetch feeds on an interval.
+    Optional args default to workers=4, batch_size=workers*2, domain_delay=2s.
 
   browse [limit]
     Show recent posts for followed feeds. Default limit is 2.
@@ -178,21 +181,65 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
-func scrapeFeeds(s *state) error {
-	nextFeed, err := s.db.GetNextFeedToFetch(context.Background())
-	if err != nil {
-		return fmt.Errorf("Couldn't get next feed to fetch: %w", err)
+type domainRateLimiter struct {
+	mu          sync.Mutex
+	nextAllowed map[string]time.Time
+	interval    time.Duration
+}
+
+func newDomainRateLimiter(interval time.Duration) *domainRateLimiter {
+	return &domainRateLimiter{
+		nextAllowed: make(map[string]time.Time),
+		interval:    interval,
+	}
+}
+
+func (l *domainRateLimiter) wait(rawURL string) {
+	parsed, err := url.Parse(rawURL)
+	host := rawURL
+	if err == nil && parsed.Hostname() != "" {
+		host = parsed.Hostname()
+	}
+
+	for {
+		l.mu.Lock()
+		now := time.Now()
+		next := l.nextAllowed[host]
+		if !now.Before(next) {
+			l.nextAllowed[host] = now.Add(l.interval)
+			l.mu.Unlock()
+			return
+		}
+		waitDuration := next.Sub(now)
+		l.mu.Unlock()
+		time.Sleep(waitDuration)
+	}
+}
+
+type scrapeResult struct {
+	feedName   string
+	newPosts   int
+	duplicates int
+	err        error
+}
+
+func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) scrapeResult {
+	result := scrapeResult{
+		feedName: nextFeed.Name,
 	}
 
 	fmt.Printf("Fetching feed: %s\n", nextFeed.Name)
-	err = s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
+	err := s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
 	if err != nil {
-		return fmt.Errorf("Couldn't mark feed fetched: %w", err)
+		result.err = fmt.Errorf("Couldn't mark feed fetched for %q: %w", nextFeed.Name, err)
+		return result
 	}
 
+	limiter.wait(nextFeed.Url)
 	feed, err := fetchFeed(context.Background(), nextFeed.Url)
 	if err != nil {
-		return fmt.Errorf("Couldn't fetch feed: %w", err)
+		result.err = fmt.Errorf("Couldn't fetch feed %q: %w", nextFeed.Name, err)
+		return result
 	}
 
 	for _, item := range feed.Channel.Item {
@@ -212,14 +259,78 @@ func scrapeFeeds(s *state) error {
 		if err != nil {
 			var pqErr *pq.Error
 			if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+				result.duplicates++
 				continue
 			}
 			fmt.Printf("Error creating post %q: %v\n", item.Title, err)
 			continue
 		}
+		result.newPosts++
 		fmt.Printf("Saved post: %s\n", item.Title)
 	}
 
+	return result
+}
+
+func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimiter) error {
+	nextFeeds, err := s.db.GetNextFeedsToFetch(context.Background(), int32(batchSize))
+	if err != nil {
+		return fmt.Errorf("Couldn't get next feeds to fetch: %w", err)
+	}
+	if len(nextFeeds) == 0 {
+		fmt.Println("No feeds to fetch")
+		return nil
+	}
+
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(nextFeeds) {
+		workers = len(nextFeeds)
+	}
+
+	jobs := make(chan database.Feed, len(nextFeeds))
+	results := make(chan scrapeResult, len(nextFeeds))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for feed := range jobs {
+				results <- scrapeFeed(s, feed, limiter)
+			}
+		}()
+	}
+
+	for _, feed := range nextFeeds {
+		jobs <- feed
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(results)
+
+	totalNewPosts := 0
+	totalDuplicates := 0
+	totalErrors := 0
+	for result := range results {
+		totalNewPosts += result.newPosts
+		totalDuplicates += result.duplicates
+		if result.err != nil {
+			totalErrors++
+			fmt.Printf("Error scraping feed %q: %v\n", result.feedName, result.err)
+		}
+	}
+
+	fmt.Printf(
+		"Scrape cycle complete (feeds=%d, workers=%d, new_posts=%d, duplicates=%d, errors=%d)\n",
+		len(nextFeeds),
+		workers,
+		totalNewPosts,
+		totalDuplicates,
+		totalErrors,
+	)
 	return nil
 }
 
@@ -254,8 +365,8 @@ func parsePublishedAt(pubDate string) sql.NullTime {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	if len(cmd.args) != 1 {
-		return errors.New("Agg requires one argument: time_between_reqs")
+	if len(cmd.args) < 1 || len(cmd.args) > 4 {
+		return errors.New("Agg requires 1 to 4 arguments: time_between_reqs [workers] [batch_size] [domain_delay]")
 	}
 
 	timeBetweenRequests, err := time.ParseDuration(cmd.args[0])
@@ -265,11 +376,39 @@ func handlerAgg(s *state, cmd command) error {
 
 	fmt.Printf("Collecting feeds every %s\n", timeBetweenRequests)
 
+	workers := 4
+	if len(cmd.args) >= 2 {
+		workers, err = strconv.Atoi(cmd.args[1])
+		if err != nil || workers < 1 {
+			return fmt.Errorf("Invalid workers value %q", cmd.args[1])
+		}
+	}
+
+	batchSize := workers * 2
+	if len(cmd.args) >= 3 {
+		batchSize, err = strconv.Atoi(cmd.args[2])
+		if err != nil || batchSize < 1 {
+			return fmt.Errorf("Invalid batch size value %q", cmd.args[2])
+		}
+	}
+
+	domainDelay := 2 * time.Second
+	if len(cmd.args) == 4 {
+		domainDelay, err = time.ParseDuration(cmd.args[3])
+		if err != nil || domainDelay <= 0 {
+			return fmt.Errorf("Invalid domain delay %q", cmd.args[3])
+		}
+	}
+
+	fmt.Printf("Agg config: workers=%d batch_size=%d domain_delay=%s\n", workers, batchSize, domainDelay)
+
+	limiter := newDomainRateLimiter(domainDelay)
+
 	ticker := time.NewTicker(timeBetweenRequests)
 	defer ticker.Stop()
 
 	for ; ; <-ticker.C {
-		err := scrapeFeeds(s)
+		err := scrapeFeeds(s, workers, batchSize, limiter)
 		if err != nil {
 			fmt.Printf("Error scraping feeds: %v\n", err)
 		}
