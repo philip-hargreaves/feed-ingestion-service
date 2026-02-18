@@ -253,12 +253,6 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 	}
 
 	fmt.Printf("Fetching feed: %s\n", nextFeed.Name)
-	err := s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
-	if err != nil {
-		result.err = fmt.Errorf("Couldn't mark feed fetched for %q: %w", nextFeed.Name, err)
-		return result
-	}
-
 	limiter.wait(nextFeed.Url)
 	feed, err := fetchFeed(context.Background(), nextFeed.Url)
 	if err != nil {
@@ -266,6 +260,12 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 			result.parseErrors = 1
 		}
 		result.err = fmt.Errorf("Couldn't fetch feed %q: %w", nextFeed.Name, err)
+		return result
+	}
+
+	err = s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
+	if err != nil {
+		result.err = fmt.Errorf("Couldn't mark feed fetched for %q: %w", nextFeed.Name, err)
 		return result
 	}
 
