@@ -13,13 +13,13 @@ import (
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
-		fmt.Printf("error reading config: %v\n", err)
+		fmt.Printf("Error reading config: %v\n", err)
 		os.Exit(1)
 	}
 
 	db, err := sql.Open("postgres", cfg.DbURL)
 	if err != nil {
-		fmt.Printf("error connecting to database: %v\n", err)
+		fmt.Printf("Error connecting to database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -38,10 +38,11 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("users", handlerUsers)
 	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddFeed)
 	cmds.register("reset", handlerReset)
 
 	if len(os.Args) < 2 {
-		fmt.Println("error: not enough arguments")
+		fmt.Println("Error: not enough arguments")
 		os.Exit(1)
 	}
 
@@ -55,7 +56,7 @@ func main() {
 
 	err = cmds.run(appState, cmd)
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 }

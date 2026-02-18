@@ -97,7 +97,7 @@ func handlerUsers(s *state, cmd command) error {
 
 	for _, user := range users {
 		if user.Name == s.cfg.CurrentUserName {
-			fmt.Printf("* %s (current)\n", user.Name)
+			fmt.Printf("* %s (Current)\n", user.Name)
 			continue
 		}
 		fmt.Printf("* %s\n", user.Name)
@@ -120,6 +120,33 @@ func handlerAgg(_ *state, cmd command) error {
 	return nil
 }
 
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) != 2 {
+		return errors.New("addfeed requires two arguments: name and url")
+	}
+
+	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return fmt.Errorf("couldn't get current user: %w", err)
+	}
+
+	now := time.Now()
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Name:      cmd.args[0],
+		Url:       cmd.args[1],
+		UserID:    currentUser.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create feed: %w", err)
+	}
+
+	fmt.Printf("%+v\n", feed)
+	return nil
+}
+
 func handlerReset(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
 		return errors.New("reset command does not take any arguments")
@@ -130,6 +157,6 @@ func handlerReset(s *state, cmd command) error {
 		return fmt.Errorf("couldn't reset database: %w", err)
 	}
 
-	fmt.Println("database reset successfully")
+	fmt.Println("Database reset successfully")
 	return nil
 }
