@@ -73,6 +73,7 @@ type state struct {
 type command struct {
 	name string
 	args []string
+	ctx  context.Context
 }
 
 type commands struct {
@@ -105,6 +106,13 @@ func (c *commands) run(s *state, cmd command) error {
 		return fmt.Errorf("Unknown command: %s", cmd.name)
 	}
 	return handler(s, cmd)
+}
+
+func commandContext(cmd command) context.Context {
+	if cmd.ctx != nil {
+		return cmd.ctx
+	}
+	return context.Background()
 }
 
 type Command struct {

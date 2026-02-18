@@ -52,7 +52,7 @@ Commands:
     Run agg under a supervisor that restarts on crashes with exponential backoff.
 
   browse [limit] [--contains TEXT] [--feed NAME]
-    Show posts for followed feeds with optional filtering.
+    Show posts for followed feeds with optional filtering (default limit: 10).
 `
 
 func handlerHelp(_ *state, cmd command) error {

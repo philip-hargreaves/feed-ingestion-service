@@ -46,16 +46,16 @@ func NewRegistry(deps Dependencies) *Registry {
 }
 
 func (r *Registry) Run(ctx context.Context, cmd Command) error {
-	_ = ctx
 	return r.cmds.run(r.state, command{
 		name: cmd.Name,
 		args: cmd.Args,
+		ctx:  ctx,
 	})
 }
 
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(s *state, cmd command) error {
-		user, err := s.users.GetUser(context.Background(), s.cfg.GetCurrentUserName())
+		user, err := s.users.GetUser(commandContext(cmd), s.cfg.GetCurrentUserName())
 		if err != nil {
 			return fmt.Errorf("Couldn't get current user: %w", err)
 		}

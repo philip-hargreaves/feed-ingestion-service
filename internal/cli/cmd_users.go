@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -10,13 +9,14 @@ import (
 )
 
 func handlerLogin(s *state, cmd command) error {
+	ctx := commandContext(cmd)
 	if len(cmd.args) == 0 {
 		return newUsageError("Login requires a username argument", "feeder login <username>")
 	}
 
 	username := cmd.args[0]
 
-	_, err := s.users.GetUser(context.Background(), username)
+	_, err := s.users.GetUser(ctx, username)
 	if err != nil {
 		return fmt.Errorf("User %q not found", username)
 	}
@@ -31,6 +31,7 @@ func handlerLogin(s *state, cmd command) error {
 }
 
 func handlerRegister(s *state, cmd command) error {
+	ctx := commandContext(cmd)
 	if len(cmd.args) == 0 {
 		return newUsageError("Register requires a username argument", "feeder register <username>")
 	}
@@ -38,7 +39,7 @@ func handlerRegister(s *state, cmd command) error {
 	username := cmd.args[0]
 	now := time.Now()
 
-	user, err := s.users.CreateUser(context.Background(), database.CreateUserParams{
+	user, err := s.users.CreateUser(ctx, database.CreateUserParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -58,11 +59,12 @@ func handlerRegister(s *state, cmd command) error {
 }
 
 func handlerUsers(s *state, cmd command) error {
+	ctx := commandContext(cmd)
 	if len(cmd.args) > 0 {
 		return newUsageError("Users command does not take any arguments", "feeder users")
 	}
 
-	users, err := s.users.GetUsers(context.Background())
+	users, err := s.users.GetUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("Couldn't get users: %w", err)
 	}
@@ -79,11 +81,12 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerReset(s *state, cmd command) error {
+	ctx := commandContext(cmd)
 	if len(cmd.args) > 0 {
 		return newUsageError("Reset command does not take any arguments", "feeder reset")
 	}
 
-	err := s.users.ResetUsers(context.Background())
+	err := s.users.ResetUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("Couldn't reset database: %w", err)
 	}

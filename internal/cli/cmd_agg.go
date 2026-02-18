@@ -59,14 +59,14 @@ type scrapeResult struct {
 	err         error
 }
 
-func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) scrapeResult {
+func scrapeFeed(s *state, ctx context.Context, nextFeed database.Feed, limiter *domainRateLimiter) scrapeResult {
 	result := scrapeResult{
 		feedName: nextFeed.Name,
 	}
 
 	fmt.Printf("Fetching feed: %s\n", nextFeed.Name)
 	limiter.wait(nextFeed.Url)
-	feed, err := s.fetchFeed(context.Background(), nextFeed.Url)
+	feed, err := s.fetchFeed(ctx, nextFeed.Url)
 	if err != nil {
 		if strings.Contains(err.Error(), "Couldn't parse feed XML") {
 			result.parseErrors = 1
@@ -75,14 +75,14 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 		return result
 	}
 
-	err = s.feeds.MarkFeedFetched(context.Background(), nextFeed.ID)
+	err = s.feeds.MarkFeedFetched(ctx, nextFeed.ID)
 	if err != nil {
 		result.err = fmt.Errorf("Couldn't mark feed fetched for %q: %w", nextFeed.Name, err)
 		return result
 	}
 
 	for _, item := range feed.Items {
-		_, err := s.posts.CreatePost(context.Background(), database.CreatePostParams{
+		_, err := s.posts.CreatePost(ctx, database.CreatePostParams{
 			ID:        uuid.New(),
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -111,8 +111,8 @@ func scrapeFeed(s *state, nextFeed database.Feed, limiter *domainRateLimiter) sc
 	return result
 }
 
-func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimiter) error {
-	nextFeeds, err := s.feeds.GetNextFeedsToFetch(context.Background(), int32(batchSize))
+func scrapeFeeds(s *state, ctx context.Context, workers int, batchSize int, limiter *domainRateLimiter) error {
+	nextFeeds, err := s.feeds.GetNextFeedsToFetch(ctx, int32(batchSize))
 	if err != nil {
 		return fmt.Errorf("Couldn't get next feeds to fetch: %w", err)
 	}
@@ -137,7 +137,7 @@ func scrapeFeeds(s *state, workers int, batchSize int, limiter *domainRateLimite
 		go func() {
 			defer wg.Done()
 			for feed := range jobs {
-				results <- scrapeFeed(s, feed, limiter)
+				results <- scrapeFeed(s, ctx, feed, limiter)
 			}
 		}()
 	}
@@ -207,6 +207,7 @@ func parsePublishedAt(pubDate string) sql.NullTime {
 }
 
 func handlerAgg(s *state, cmd command) error {
+	ctx := commandContext(cmd)
 	if len(cmd.args) < 1 || len(cmd.args) > 4 {
 		return newUsageError("Agg requires 1 to 4 arguments", "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 	}
@@ -250,7 +251,7 @@ func handlerAgg(s *state, cmd command) error {
 	defer ticker.Stop()
 
 	for ; ; <-ticker.C {
-		err := scrapeFeeds(s, workers, batchSize, limiter)
+		err := scrapeFeeds(s, ctx, workers, batchSize, limiter)
 		if err != nil {
 			fmt.Printf("Error scraping feeds: %v\n", err)
 		}

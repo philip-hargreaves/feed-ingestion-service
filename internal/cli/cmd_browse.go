@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,7 +10,8 @@ import (
 )
 
 func handlerBrowse(s *state, cmd command, user database.User) error {
-	limit := 2
+	ctx := commandContext(cmd)
+	limit := 10
 	containsFilter := ""
 	feedFilter := ""
 	startIdx := 0
@@ -48,7 +48,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 		}
 	}
 
-	posts, err := s.posts.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+	posts, err := s.posts.GetPostsForUser(ctx, database.GetPostsForUserParams{
 		UserID:  user.ID,
 		Column2: containsFilter,
 		Column3: feedFilter,
