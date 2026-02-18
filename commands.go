@@ -29,6 +29,55 @@ type commands struct {
 	handlers map[string]func(*state, command) error
 }
 
+const helpText = `Feeder CLI
+
+Feeder is an RSS aggregation CLI that lets you:
+- Manage users
+- Add and follow feeds
+- Aggregate posts from followed feeds
+- Browse saved posts
+
+Usage:
+  feeder <command> [arguments]
+
+Commands:
+  help
+    Show this help message.
+
+  register <username>
+    Create a user and set it as the current user.
+
+  login <username>
+    Set an existing user as the current user.
+
+  users
+    List all users and mark the current user.
+
+  reset
+    Delete all users (and cascaded data such as feeds, follows, and posts).
+
+  addfeed <name> <url>
+    Create a feed for the current user and auto-follow it.
+
+  feeds
+    List all feeds with feed URL and owner.
+
+  follow <url>
+    Follow an existing feed by URL.
+
+  unfollow <url>
+    Unfollow a feed by URL.
+
+  following
+    List feed names the current user follows.
+
+  agg <time_between_reqs>
+    Continuously fetch feeds on an interval (examples: 5s, 1m, 1h).
+
+  browse [limit]
+    Show recent posts for followed feeds. Default limit is 2.
+`
+
 func (c *commands) register(name string, f func(*state, command) error) {
 	c.handlers[name] = f
 }
@@ -49,6 +98,15 @@ func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) 
 		}
 		return handler(s, cmd, user)
 	}
+}
+
+func handlerHelp(_ *state, cmd command) error {
+	if len(cmd.args) > 0 {
+		return errors.New("Help command does not take any arguments")
+	}
+
+	fmt.Print(helpText)
+	return nil
 }
 
 func handlerLogin(s *state, cmd command) error {
