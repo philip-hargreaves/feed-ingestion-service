@@ -106,6 +106,20 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAgg(_ *state, cmd command) error {
+	if len(cmd.args) > 0 {
+		return errors.New("agg command does not take any arguments")
+	}
+
+	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return fmt.Errorf("couldn't aggregate feed: %w", err)
+	}
+
+	fmt.Printf("%+v\n", *feed)
+	return nil
+}
+
 func handlerReset(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
 		return errors.New("reset command does not take any arguments")
