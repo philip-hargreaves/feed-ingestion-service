@@ -30,26 +30,26 @@ type RSSItem struct {
 func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't create request: %w", err)
+		return nil, fmt.Errorf("Couldn't create request: %w", err)
 	}
-	request.Header.Set("User-Agent", "gator")
+	request.Header.Set("User-Agent", "feeder")
 
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't fetch feed: %w", err)
+		return nil, fmt.Errorf("Couldn't fetch feed: %w", err)
 	}
 	defer response.Body.Close()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't read response body: %w", err)
+		return nil, fmt.Errorf("Couldn't read response body: %w", err)
 	}
 
 	feed := RSSFeed{}
 	err = xml.Unmarshal(responseBody, &feed)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't parse feed XML: %w", err)
+		return nil, fmt.Errorf("Couldn't parse feed XML: %w", err)
 	}
 
 	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)

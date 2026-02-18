@@ -32,26 +32,36 @@ func (c *commands) register(name string, f func(*state, command) error) {
 func (c *commands) run(s *state, cmd command) error {
 	handler, ok := c.handlers[cmd.name]
 	if !ok {
-		return fmt.Errorf("unknown command: %s", cmd.name)
+		return fmt.Errorf("Unknown command: %s", cmd.name)
 	}
 	return handler(s, cmd)
 }
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+		if err != nil {
+			return fmt.Errorf("Couldn't get current user: %w", err)
+		}
+		return handler(s, cmd, user)
+	}
+}
+
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		return errors.New("login requires a username argument")
+		return errors.New("Login requires a username argument")
 	}
 
 	username := cmd.args[0]
 
 	_, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
-		return fmt.Errorf("user %q not found", username)
+		return fmt.Errorf("User %q not found", username)
 	}
 
 	err = s.cfg.SetUser(username)
 	if err != nil {
-		return fmt.Errorf("couldn't set user: %w", err)
+		return fmt.Errorf("Couldn't set user: %w", err)
 	}
 
 	fmt.Printf("User has been set to %q\n", username)
@@ -60,7 +70,7 @@ func handlerLogin(s *state, cmd command) error {
 
 func handlerRegister(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		return errors.New("register requires a username argument")
+		return errors.New("Register requires a username argument")
 	}
 
 	username := cmd.args[0]
@@ -73,12 +83,12 @@ func handlerRegister(s *state, cmd command) error {
 		Name:      username,
 	})
 	if err != nil {
-		return fmt.Errorf("couldn't create user: %w", err)
+		return fmt.Errorf("Couldn't create user: %w", err)
 	}
 
 	err = s.cfg.SetUser(username)
 	if err != nil {
-		return fmt.Errorf("couldn't set user: %w", err)
+		return fmt.Errorf("Couldn't set user: %w", err)
 	}
 
 	fmt.Printf("User %q was created\n", user.Name)
@@ -87,12 +97,12 @@ func handlerRegister(s *state, cmd command) error {
 
 func handlerUsers(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("users command does not take any arguments")
+		return errors.New("Users command does not take any arguments")
 	}
 
 	users, err := s.db.GetUsers(context.Background())
 	if err != nil {
-		return fmt.Errorf("couldn't get users: %w", err)
+		return fmt.Errorf("Couldn't get users: %w", err)
 	}
 
 	for _, user := range users {
@@ -106,28 +116,56 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAgg(_ *state, cmd command) error {
-	if len(cmd.args) > 0 {
-		return errors.New("agg command does not take any arguments")
-	}
-
-	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+func scrapeFeeds(s *state) error {
+	nextFeed, err := s.db.GetNextFeedToFetch(context.Background())
 	if err != nil {
-		return fmt.Errorf("couldn't aggregate feed: %w", err)
+		return fmt.Errorf("Couldn't get next feed to fetch: %w", err)
 	}
 
-	fmt.Printf("%+v\n", *feed)
+	fmt.Printf("Fetching feed: %s\n", nextFeed.Name)
+	err = s.db.MarkFeedFetched(context.Background(), nextFeed.ID)
+	if err != nil {
+		return fmt.Errorf("Couldn't mark feed fetched: %w", err)
+	}
+
+	feed, err := fetchFeed(context.Background(), nextFeed.Url)
+	if err != nil {
+		return fmt.Errorf("Couldn't fetch feed: %w", err)
+	}
+
+	for _, item := range feed.Channel.Item {
+		fmt.Printf("Post: %s\n", item.Title)
+	}
+
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
-	if len(cmd.args) != 2 {
-		return errors.New("addfeed requires two arguments: name and url")
+func handlerAgg(s *state, cmd command) error {
+	if len(cmd.args) != 1 {
+		return errors.New("Agg requires one argument: time_between_reqs")
 	}
 
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	timeBetweenRequests, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
+		return fmt.Errorf("Invalid duration %q: %w", cmd.args[0], err)
+	}
+
+	fmt.Printf("Collecting feeds every %s\n", timeBetweenRequests)
+
+	ticker := time.NewTicker(timeBetweenRequests)
+	defer ticker.Stop()
+
+	for ; ; <-ticker.C {
+		err := scrapeFeeds(s)
+		if err != nil {
+			fmt.Printf("Error scraping feeds: %v\n", err)
+		}
+	}
+}
+
+func handlerAddFeed(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 2 {
+		return errors.New("Addfeed requires two arguments: name and url")
 	}
 
 	now := time.Now()
@@ -137,40 +175,35 @@ func handlerAddFeed(s *state, cmd command) error {
 		UpdatedAt: now,
 		Name:      cmd.args[0],
 		Url:       cmd.args[1],
-		UserID:    currentUser.ID,
+		UserID:    user.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("couldn't create feed: %w", err)
+		return fmt.Errorf("Couldn't create feed: %w", err)
 	}
 
 	_, err = s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
-		UserID:    currentUser.ID,
+		UserID:    user.ID,
 		FeedID:    feed.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("couldn't create feed follow: %w", err)
+		return fmt.Errorf("Couldn't create feed follow: %w", err)
 	}
 
 	fmt.Printf("%+v\n", feed)
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 1 {
-		return errors.New("follow requires one argument: url")
-	}
-
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
+		return errors.New("Follow requires one argument: url")
 	}
 
 	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
 	if err != nil {
-		return fmt.Errorf("couldn't find feed by URL: %w", err)
+		return fmt.Errorf("Couldn't find feed by URL: %w", err)
 	}
 
 	now := time.Now()
@@ -178,11 +211,11 @@ func handlerFollow(s *state, cmd command) error {
 		ID:        uuid.New(),
 		CreatedAt: now,
 		UpdatedAt: now,
-		UserID:    currentUser.ID,
+		UserID:    user.ID,
 		FeedID:    feed.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("couldn't create feed follow: %w", err)
+		return fmt.Errorf("Couldn't create feed follow: %w", err)
 	}
 
 	fmt.Printf("Feed Name: %s\n", feedFollow.FeedName)
@@ -190,19 +223,36 @@ func handlerFollow(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 1 {
+		return errors.New("Unfollow requires one argument: url")
+	}
+
+	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
+	if err != nil {
+		return fmt.Errorf("Couldn't find feed by URL: %w", err)
+	}
+
+	err = s.db.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("Couldn't unfollow feed: %w", err)
+	}
+
+	fmt.Printf("Unfollowed feed: %s\n", feed.Name)
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command, user database.User) error {
 	if len(cmd.args) > 0 {
-		return errors.New("following command does not take any arguments")
+		return errors.New("Following command does not take any arguments")
 	}
 
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
-		return fmt.Errorf("couldn't get current user: %w", err)
-	}
-
-	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), currentUser.ID)
-	if err != nil {
-		return fmt.Errorf("couldn't get feed follows: %w", err)
+		return fmt.Errorf("Couldn't get feed follows: %w", err)
 	}
 
 	for _, feedFollow := range feedFollows {
@@ -214,12 +264,12 @@ func handlerFollowing(s *state, cmd command) error {
 
 func handlerFeeds(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("feeds command does not take any arguments")
+		return errors.New("Feeds command does not take any arguments")
 	}
 
 	feeds, err := s.db.GetFeeds(context.Background())
 	if err != nil {
-		return fmt.Errorf("couldn't get feeds: %w", err)
+		return fmt.Errorf("Couldn't get feeds: %w", err)
 	}
 
 	for _, feed := range feeds {
@@ -233,12 +283,12 @@ func handlerFeeds(s *state, cmd command) error {
 
 func handlerReset(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("reset command does not take any arguments")
+		return errors.New("Reset command does not take any arguments")
 	}
 
 	err := s.db.ResetUsers(context.Background())
 	if err != nil {
-		return fmt.Errorf("couldn't reset database: %w", err)
+		return fmt.Errorf("Couldn't reset database: %w", err)
 	}
 
 	fmt.Println("Database reset successfully")
