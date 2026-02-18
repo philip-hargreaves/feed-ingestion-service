@@ -72,29 +72,51 @@ SELECT posts.id,
        posts.url,
        posts.description,
        posts.published_at,
-       posts.feed_id
+       posts.feed_id,
+       feeds.name AS feed_name
 FROM posts
 INNER JOIN feeds ON posts.feed_id = feeds.id
 INNER JOIN feed_follows ON feed_follows.feed_id = feeds.id
 WHERE feed_follows.user_id = $1
+  AND ($2::text = '' OR posts.title ILIKE '%' || $2 || '%' OR COALESCE(posts.description, '') ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR feeds.name ILIKE '%' || $3 || '%')
 ORDER BY posts.published_at DESC NULLS LAST, posts.created_at DESC
-LIMIT $2
+LIMIT $4
 `
 
 type GetPostsForUserParams struct {
-	UserID uuid.UUID
-	Limit  int32
+	UserID  uuid.UUID
+	Column2 string
+	Column3 string
+	Limit   int32
 }
 
-func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]Post, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Limit)
+type GetPostsForUserRow struct {
+	ID          uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Title       string
+	Url         string
+	Description sql.NullString
+	PublishedAt sql.NullTime
+	FeedID      uuid.UUID
+	FeedName    string
+}
+
+func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]GetPostsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPostsForUser,
+		arg.UserID,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []GetPostsForUserRow
 	for rows.Next() {
-		var i Post
+		var i GetPostsForUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.CreatedAt,
@@ -104,6 +126,7 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 			&i.Description,
 			&i.PublishedAt,
 			&i.FeedID,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}

@@ -20,10 +20,13 @@ SELECT posts.id,
        posts.url,
        posts.description,
        posts.published_at,
-       posts.feed_id
+       posts.feed_id,
+       feeds.name AS feed_name
 FROM posts
 INNER JOIN feeds ON posts.feed_id = feeds.id
 INNER JOIN feed_follows ON feed_follows.feed_id = feeds.id
 WHERE feed_follows.user_id = $1
+  AND ($2::text = '' OR posts.title ILIKE '%' || $2 || '%' OR COALESCE(posts.description, '') ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR feeds.name ILIKE '%' || $3 || '%')
 ORDER BY posts.published_at DESC NULLS LAST, posts.created_at DESC
-LIMIT $2;
+LIMIT $4;

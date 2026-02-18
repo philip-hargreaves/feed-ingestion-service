@@ -35,6 +35,22 @@ type commands struct {
 	handlers map[string]func(*state, command) error
 }
 
+type usageError struct {
+	message string
+	usage   string
+}
+
+func (e usageError) Error() string {
+	return fmt.Sprintf("%s\nUsage: %s", e.message, e.usage)
+}
+
+func newUsageError(message, usage string) error {
+	return usageError{
+		message: message,
+		usage:   usage,
+	}
+}
+
 const helpText = `Feeder CLI
 
 Feeder is an RSS aggregation CLI that lets you:
@@ -84,8 +100,8 @@ Commands:
   supervise <agg-args...>
     Run agg under a supervisor that restarts on crashes with exponential backoff.
 
-  browse [limit]
-    Show recent posts for followed feeds. Default limit is 2.
+  browse [limit] [--contains TEXT] [--feed NAME]
+    Show posts for followed feeds with optional filtering.
 `
 
 func (c *commands) register(name string, f func(*state, command) error) {
@@ -112,7 +128,7 @@ func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) 
 
 func handlerHelp(_ *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("Help command does not take any arguments")
+		return newUsageError("Help command does not take any arguments", "feeder help")
 	}
 
 	fmt.Print(helpText)
@@ -121,7 +137,7 @@ func handlerHelp(_ *state, cmd command) error {
 
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		return errors.New("Login requires a username argument")
+		return newUsageError("Login requires a username argument", "feeder login <username>")
 	}
 
 	username := cmd.args[0]
@@ -142,7 +158,7 @@ func handlerLogin(s *state, cmd command) error {
 
 func handlerRegister(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		return errors.New("Register requires a username argument")
+		return newUsageError("Register requires a username argument", "feeder register <username>")
 	}
 
 	username := cmd.args[0]
@@ -169,7 +185,7 @@ func handlerRegister(s *state, cmd command) error {
 
 func handlerUsers(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("Users command does not take any arguments")
+		return newUsageError("Users command does not take any arguments", "feeder users")
 	}
 
 	users, err := s.db.GetUsers(context.Background())
@@ -380,12 +396,12 @@ func parsePublishedAt(pubDate string) sql.NullTime {
 
 func handlerAgg(s *state, cmd command) error {
 	if len(cmd.args) < 1 || len(cmd.args) > 4 {
-		return errors.New("Agg requires 1 to 4 arguments: time_between_reqs [workers] [batch_size] [domain_delay]")
+		return newUsageError("Agg requires 1 to 4 arguments", "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 	}
 
 	timeBetweenRequests, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		return fmt.Errorf("Invalid duration %q: %w", cmd.args[0], err)
+		return newUsageError(fmt.Sprintf("Invalid duration %q", cmd.args[0]), "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 	}
 
 	fmt.Printf("Collecting feeds every %s\n", timeBetweenRequests)
@@ -394,7 +410,7 @@ func handlerAgg(s *state, cmd command) error {
 	if len(cmd.args) >= 2 {
 		workers, err = strconv.Atoi(cmd.args[1])
 		if err != nil || workers < 1 {
-			return fmt.Errorf("Invalid workers value %q", cmd.args[1])
+			return newUsageError(fmt.Sprintf("Invalid workers value %q", cmd.args[1]), "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 		}
 	}
 
@@ -402,7 +418,7 @@ func handlerAgg(s *state, cmd command) error {
 	if len(cmd.args) >= 3 {
 		batchSize, err = strconv.Atoi(cmd.args[2])
 		if err != nil || batchSize < 1 {
-			return fmt.Errorf("Invalid batch size value %q", cmd.args[2])
+			return newUsageError(fmt.Sprintf("Invalid batch size value %q", cmd.args[2]), "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 		}
 	}
 
@@ -410,7 +426,7 @@ func handlerAgg(s *state, cmd command) error {
 	if len(cmd.args) == 4 {
 		domainDelay, err = time.ParseDuration(cmd.args[3])
 		if err != nil || domainDelay <= 0 {
-			return fmt.Errorf("Invalid domain delay %q", cmd.args[3])
+			return newUsageError(fmt.Sprintf("Invalid domain delay %q", cmd.args[3]), "feeder agg <time_between_reqs> [workers] [batch_size] [domain_delay]")
 		}
 	}
 
@@ -431,7 +447,7 @@ func handlerAgg(s *state, cmd command) error {
 
 func handlerSupervise(_ *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		return errors.New("Supervise requires agg arguments, for example: supervise 10s 4 8 2s")
+		return newUsageError("Supervise requires agg arguments", "feeder supervise <time_between_reqs> [workers] [batch_size] [domain_delay]")
 	}
 
 	executablePath, err := os.Executable()
@@ -537,7 +553,7 @@ func handlerSupervise(_ *state, cmd command) error {
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 2 {
-		return errors.New("Addfeed requires two arguments: name and url")
+		return newUsageError("Addfeed requires two arguments: name and url", "feeder addfeed <name> <url>")
 	}
 
 	now := time.Now()
@@ -570,7 +586,7 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 
 func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 1 {
-		return errors.New("Follow requires one argument: url")
+		return newUsageError("Follow requires one argument: url", "feeder follow <url>")
 	}
 
 	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
@@ -597,7 +613,7 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 
 func handlerUnfollow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 1 {
-		return errors.New("Unfollow requires one argument: url")
+		return newUsageError("Unfollow requires one argument: url", "feeder unfollow <url>")
 	}
 
 	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
@@ -619,7 +635,7 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 
 func handlerFollowing(s *state, cmd command, user database.User) error {
 	if len(cmd.args) > 0 {
-		return errors.New("Following command does not take any arguments")
+		return newUsageError("Following command does not take any arguments", "feeder following")
 	}
 
 	feedFollows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
@@ -636,27 +652,68 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 
 func handlerBrowse(s *state, cmd command, user database.User) error {
 	limit := 2
-	if len(cmd.args) > 1 {
-		return errors.New("Browse accepts at most one optional argument: limit")
-	}
-	if len(cmd.args) == 1 {
+	containsFilter := ""
+	feedFilter := ""
+	startIdx := 0
+
+	if len(cmd.args) > 0 && !strings.HasPrefix(cmd.args[0], "-") {
 		parsedLimit, err := strconv.Atoi(cmd.args[0])
 		if err != nil || parsedLimit <= 0 {
-			return fmt.Errorf("Invalid limit %q", cmd.args[0])
+			return newUsageError(fmt.Sprintf("Invalid limit %q", cmd.args[0]), "feeder browse [limit] [--contains TEXT] [--feed NAME]")
 		}
 		limit = parsedLimit
+		startIdx = 1
+	}
+
+	for i := startIdx; i < len(cmd.args); i++ {
+		arg := cmd.args[i]
+		switch arg {
+		case "--contains":
+			if i+1 >= len(cmd.args) {
+				return newUsageError("Browse requires a value after --contains", "feeder browse [limit] [--contains TEXT] [--feed NAME]")
+			}
+			containsFilter = cmd.args[i+1]
+			i++
+		case "--feed":
+			if i+1 >= len(cmd.args) {
+				return newUsageError("Browse requires a value after --feed", "feeder browse [limit] [--contains TEXT] [--feed NAME]")
+			}
+			feedFilter = cmd.args[i+1]
+			i++
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return newUsageError(fmt.Sprintf("Unknown browse option %q", arg), "feeder browse [limit] [--contains TEXT] [--feed NAME]")
+			}
+			return newUsageError(fmt.Sprintf("Unexpected positional argument %q; only first positional limit is allowed", arg), "feeder browse [limit] [--contains TEXT] [--feed NAME]")
+		}
 	}
 
 	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
-		UserID: user.ID,
-		Limit:  int32(limit),
+		UserID:   user.ID,
+		Column2:  containsFilter,
+		Column3:  feedFilter,
+		Limit:    int32(limit),
 	})
 	if err != nil {
 		return fmt.Errorf("Couldn't get posts for user: %w", err)
 	}
 
+	fmt.Printf("Showing up to %d posts\n", limit)
+	if containsFilter != "" {
+		fmt.Printf("Filter contains: %s\n", containsFilter)
+	}
+	if feedFilter != "" {
+		fmt.Printf("Filter feed: %s\n", feedFilter)
+	}
+	if len(posts) == 0 {
+		fmt.Println("No posts found")
+		return nil
+	}
+	fmt.Println()
+
 	for _, post := range posts {
 		fmt.Printf("Title: %s\n", post.Title)
+		fmt.Printf("Feed: %s\n", post.FeedName)
 		fmt.Printf("URL: %s\n", post.Url)
 		if post.Description.Valid {
 			fmt.Printf("Description: %s\n", post.Description.String)
@@ -672,7 +729,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 
 func handlerFeeds(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("Feeds command does not take any arguments")
+		return newUsageError("Feeds command does not take any arguments", "feeder feeds")
 	}
 
 	feeds, err := s.db.GetFeeds(context.Background())
@@ -691,7 +748,7 @@ func handlerFeeds(s *state, cmd command) error {
 
 func handlerReset(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
-		return errors.New("Reset command does not take any arguments")
+		return newUsageError("Reset command does not take any arguments", "feeder reset")
 	}
 
 	err := s.db.ResetUsers(context.Background())

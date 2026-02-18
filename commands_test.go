@@ -164,7 +164,7 @@ func TestHandlerHelpNoArgsPrintsHelp(t *testing.T) {
 	if !strings.Contains(out, "Feeder CLI") {
 		t.Fatalf("expected help output to contain title, got: %q", out)
 	}
-	if !strings.Contains(out, "browse [limit]") {
+	if !strings.Contains(out, "browse [limit] [--contains TEXT] [--feed NAME]") {
 		t.Fatalf("expected help output to contain browse command, got: %q", out)
 	}
 }
@@ -262,15 +262,15 @@ func TestHandlerBrowseDefaultLimitAndOutput(t *testing.T) {
 	feedID := uuid.New()
 	now := time.Now().UTC()
 
-	mock.ExpectQuery(`(?s)SELECT posts.id,.*LIMIT \$2`).
-		WithArgs(user.ID, int32(2)).
+	mock.ExpectQuery(`(?s)SELECT posts.id,.*LIMIT \$4`).
+		WithArgs(user.ID, "post", "sample", int32(3)).
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "created_at", "updated_at", "title", "url", "description", "published_at", "feed_id"}).
-				AddRow(postID, now, now, "Post title", "https://example.com/post", "Post description", now, feedID),
+			sqlmock.NewRows([]string{"id", "created_at", "updated_at", "title", "url", "description", "published_at", "feed_id", "feed_name"}).
+				AddRow(postID, now, now, "Post title", "https://example.com/post", "Post description", now, feedID, "Sample Feed"),
 		)
 
 	out := captureStdout(t, func() {
-		if err := handlerBrowse(s, command{name: "browse"}, user); err != nil {
+		if err := handlerBrowse(s, command{name: "browse", args: []string{"3", "--contains", "post", "--feed", "sample"}}, user); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -280,6 +280,12 @@ func TestHandlerBrowseDefaultLimitAndOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, "URL: https://example.com/post") {
 		t.Fatalf("expected output to include post url, got: %q", out)
+	}
+	if !strings.Contains(out, "Feed: Sample Feed") {
+		t.Fatalf("expected output to include feed name, got: %q", out)
+	}
+	if !strings.Contains(out, "Showing up to 3 posts") {
+		t.Fatalf("expected output to include browse header, got: %q", out)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -291,12 +297,7 @@ func TestHandlerBrowseLimitValidation(t *testing.T) {
 	user := database.User{ID: uuid.New(), Name: "alice"}
 	s := &state{}
 
-	err := handlerBrowse(s, command{name: "browse", args: []string{"1", "2"}}, user)
-	if err == nil {
-		t.Fatal("expected error when too many args are provided")
-	}
-
-	err = handlerBrowse(s, command{name: "browse", args: []string{"0"}}, user)
+	err := handlerBrowse(s, command{name: "browse", args: []string{"0"}}, user)
 	if err == nil {
 		t.Fatal("expected error for non-positive limit")
 	}
@@ -304,5 +305,15 @@ func TestHandlerBrowseLimitValidation(t *testing.T) {
 	err = handlerBrowse(s, command{name: "browse", args: []string{"abc"}}, user)
 	if err == nil {
 		t.Fatal("expected error for non-numeric limit")
+	}
+
+	err = handlerBrowse(s, command{name: "browse", args: []string{"3", "--unknown", "x"}}, user)
+	if err == nil {
+		t.Fatal("expected error for unknown browse option")
+	}
+
+	err = handlerBrowse(s, command{name: "browse", args: []string{"3", "extra"}}, user)
+	if err == nil {
+		t.Fatal("expected error for extra positional argument")
 	}
 }
