@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/config"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/database"
 )
@@ -134,10 +138,61 @@ func scrapeFeeds(s *state) error {
 	}
 
 	for _, item := range feed.Channel.Item {
-		fmt.Printf("Post: %s\n", item.Title)
+		_, err := s.db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Title:     item.Title,
+			Url:       item.Link,
+			Description: sql.NullString{
+				String: item.Description,
+				Valid:  strings.TrimSpace(item.Description) != "",
+			},
+			PublishedAt: parsePublishedAt(item.PubDate),
+			FeedID:      nextFeed.ID,
+		})
+		if err != nil {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+				continue
+			}
+			fmt.Printf("Error creating post %q: %v\n", item.Title, err)
+			continue
+		}
+		fmt.Printf("Saved post: %s\n", item.Title)
 	}
 
 	return nil
+}
+
+func parsePublishedAt(pubDate string) sql.NullTime {
+	trimmed := strings.TrimSpace(pubDate)
+	if trimmed == "" {
+		return sql.NullTime{}
+	}
+
+	layouts := []string{
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC822Z,
+		time.RFC822,
+		time.RFC3339,
+		time.RFC3339Nano,
+		"Mon, 2 Jan 2006 15:04:05 MST",
+		"Mon, 2 Jan 2006 15:04 MST",
+	}
+
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, trimmed)
+		if err == nil {
+			return sql.NullTime{
+				Time:  parsed,
+				Valid: true,
+			}
+		}
+	}
+
+	return sql.NullTime{}
 }
 
 func handlerAgg(s *state, cmd command) error {
@@ -257,6 +312,42 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 
 	for _, feedFollow := range feedFollows {
 		fmt.Println(feedFollow.FeedName)
+	}
+
+	return nil
+}
+
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := 2
+	if len(cmd.args) > 1 {
+		return errors.New("Browse accepts at most one optional argument: limit")
+	}
+	if len(cmd.args) == 1 {
+		parsedLimit, err := strconv.Atoi(cmd.args[0])
+		if err != nil || parsedLimit <= 0 {
+			return fmt.Errorf("Invalid limit %q", cmd.args[0])
+		}
+		limit = parsedLimit
+	}
+
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return fmt.Errorf("Couldn't get posts for user: %w", err)
+	}
+
+	for _, post := range posts {
+		fmt.Printf("Title: %s\n", post.Title)
+		fmt.Printf("URL: %s\n", post.Url)
+		if post.Description.Valid {
+			fmt.Printf("Description: %s\n", post.Description.String)
+		}
+		if post.PublishedAt.Valid {
+			fmt.Printf("Published At: %s\n", post.PublishedAt.Time.Format(time.RFC3339))
+		}
+		fmt.Println()
 	}
 
 	return nil
