@@ -1,10 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
+	_ "github.com/lib/pq"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/config"
+	"github.com/philip-hargreaves/feed-ingestion-service/internal/database"
 )
 
 func main() {
@@ -14,17 +17,42 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = cfg.SetUser("philip")
+	db, err := sql.Open("postgres", cfg.DbURL)
 	if err != nil {
-		fmt.Printf("error setting user: %v\n", err)
+		fmt.Printf("error connecting to database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	dbQueries := database.New(db)
+
+	appState := &state{
+		cfg: &cfg,
+		db:  dbQueries,
+	}
+
+	cmds := &commands{
+		handlers: make(map[string]func(*state, command) error),
+	}
+	cmds.register("login", handlerLogin)
+	cmds.register("register", handlerRegister)
+
+	if len(os.Args) < 2 {
+		fmt.Println("error: not enough arguments")
 		os.Exit(1)
 	}
 
-	cfg, err = config.Read()
-	if err != nil {
-		fmt.Printf("error reading config again: %v\n", err)
-		os.Exit(1)
+	cmdName := os.Args[1]
+	cmdArgs := os.Args[2:]
+
+	cmd := command{
+		name: cmdName,
+		args: cmdArgs,
 	}
 
-	fmt.Printf("Config: %+v\n", cfg)
+	err = cmds.run(appState, cmd)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		os.Exit(1)
+	}
 }

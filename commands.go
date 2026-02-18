@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/philip-hargreaves/feed-ingestion-service/internal/config"
+	"github.com/philip-hargreaves/feed-ingestion-service/internal/database"
 )
 
 type state struct {
 	cfg *config.Config
+	db  *database.Queries
 }
 
 type command struct {
@@ -38,11 +43,44 @@ func handlerLogin(s *state, cmd command) error {
 	}
 
 	username := cmd.args[0]
-	err := s.cfg.SetUser(username)
+
+	_, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("user %q not found", username)
+	}
+
+	err = s.cfg.SetUser(username)
 	if err != nil {
 		return fmt.Errorf("couldn't set user: %w", err)
 	}
 
 	fmt.Printf("User has been set to %q\n", username)
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		return errors.New("register requires a username argument")
+	}
+
+	username := cmd.args[0]
+	now := time.Now()
+
+	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
+		ID:        uuid.New(),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Name:      username,
+	})
+	if err != nil {
+		return fmt.Errorf("couldn't create user: %w", err)
+	}
+
+	err = s.cfg.SetUser(username)
+	if err != nil {
+		return fmt.Errorf("couldn't set user: %w", err)
+	}
+
+	fmt.Printf("User %q was created\n", user.Name)
 	return nil
 }
