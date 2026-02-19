@@ -214,7 +214,6 @@ Config not found:
 DB connection issues:
 - Verify `db_url`, credentials, host, and PostgreSQL status.
 
-No posts showing:
-- Confirm the user follows feeds (`feeder following`) and ingestion is running (`agg` or `supervise`).
+
 
 
